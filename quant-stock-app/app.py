@@ -365,32 +365,85 @@ def main() -> None:
             display_df = result_df[available_cols].rename(columns=display_cols)
 
             def _style_dataframe(df: pd.DataFrame) -> pd.io.formats.style.Styler:
+                def _format_optional_number(value: float | None) -> str:
+                    return f"{float(value):.1f}" if pd.notna(value) else "-"
+
                 styler = df.style.format(
                     {
-                        "合計スコア": lambda x: f"{x:.1f}" if x is not None else "-",
-                        "RSI点": lambda x: f"{x:.1f}" if x is not None else "-",
-                        "MA点": lambda x: f"{x:.1f}" if x is not None else "-",
-                        "RSI": lambda x: f"{x:.1f}" if x is not None else "-",
-                        "MA50": lambda x: f"{x:.1f}" if x is not None else "-",
-                        "MA200": lambda x: f"{x:.1f}" if x is not None else "-",
-                        "ベンチマーク超過": lambda x: f"{x:.1f}" if x is not None else "-",
+                        "合計スコア": _format_optional_number,
+                        "RSI点": _format_optional_number,
+                        "MA点": _format_optional_number,
+                        "RSI": _format_optional_number,
+                        "MA50": _format_optional_number,
+                        "MA200": _format_optional_number,
+                        "ベンチマーク超過": _format_optional_number,
                     }
                 )
 
-                def _color_score(val: float | None) -> str:
-                    if val is None:
-                        return ""
-                    if val >= 0:
-                        return "color: #007f3e"  # 緑
-                    return "color: #c70000"  # 赤
+                def _clamp01(value: float) -> float:
+                    return max(0.0, min(1.0, value))
+
+                def _rgb_to_css(r: float, g: float, b: float) -> str:
+                    r_int = max(0, min(255, round(r)))
+                    g_int = max(0, min(255, round(g)))
+                    b_int = max(0, min(255, round(b)))
+                    return f"rgb({r_int}, {g_int}, {b_int})"
+
+                def _lerp_color(c1: tuple[int, int, int], c2: tuple[int, int, int], t: float) -> str:
+                    ratio = _clamp01(t)
+                    return _rgb_to_css(
+                        c1[0] + (c2[0] - c1[0]) * ratio,
+                        c1[1] + (c2[1] - c1[1]) * ratio,
+                        c1[2] + (c2[2] - c1[2]) * ratio,
+                    )
+
+                def _gradient_score(col: pd.Series) -> list[str]:
+                    values = pd.to_numeric(col, errors="coerce")
+                    valid = values.dropna()
+                    if valid.empty:
+                        return [""] * len(col)
+                    vmin, vmax = valid.min(), valid.max()
+                    if vmin == vmax:
+                        return ["background-color: #f5f5f5" if pd.notna(v) else "" for v in values]
+                    styles: list[str] = []
+                    for v in values:
+                        if pd.isna(v):
+                            styles.append("")
+                            continue
+                        t = (float(v) - float(vmin)) / (float(vmax) - float(vmin))
+                        color = _lerp_color((245, 108, 108), (126, 217, 87), t)
+                        styles.append(f"background-color: {color}")
+                    return styles
+
+                def _gradient_benchmark(col: pd.Series) -> list[str]:
+                    values = pd.to_numeric(col, errors="coerce")
+                    valid = values.dropna()
+                    if valid.empty:
+                        return [""] * len(col)
+                    max_abs = max(abs(float(valid.min())), abs(float(valid.max())))
+                    if max_abs == 0:
+                        return ["background-color: #f5f5f5" if pd.notna(v) else "" for v in values]
+                    styles: list[str] = []
+                    for v in values:
+                        if pd.isna(v):
+                            styles.append("")
+                            continue
+                        ratio = float(v) / max_abs
+                        if ratio < 0:
+                            color = _lerp_color((245, 108, 108), (255, 255, 255), ratio + 1.0)
+                        else:
+                            color = _lerp_color((255, 255, 255), (126, 217, 87), ratio)
+                        styles.append(f"background-color: {color}")
+                    return styles
 
                 if "合計スコア" in df.columns:
-                    styler = styler.applymap(_color_score, subset=["合計スコア"])
+                    styler = styler.apply(_gradient_score, subset=["合計スコア"])
 
                 if "ベンチマーク超過" in df.columns:
-                    styler = styler.applymap(_color_score, subset=["ベンチマーク超過"])
+                    styler = styler.apply(_gradient_benchmark, subset=["ベンチマーク超過"])
 
                 if "状態" in df.columns:
+
                     def _highlight_status(row: pd.Series) -> list[str]:
                         if row.get("状態") == "error":
                             return ["background-color: #ffe5e5"] * len(row)
