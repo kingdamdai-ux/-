@@ -42,8 +42,14 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # 動作を安定させるため、インデックスを日付として扱う
     df = df.copy()
 
-    df["RSI"] = _rsi(df["Close"], window=14)
-    df["MA50"] = df["Close"].rolling(window=50, min_periods=1).mean()
-    df["MA200"] = df["Close"].rolling(window=200, min_periods=1).mean()
+    # yfinance は単一銘柄でも MultiIndex カラムを返すことがあるため、Close シリーズを取り出す
+    close = df["Close"]
+    if isinstance(close, pd.DataFrame):
+        # 例: MultiIndex (Price, Ticker) 形式
+        close = close.iloc[:, 0]
+
+    df["RSI"] = _rsi(close, window=14)
+    df["MA50"] = close.rolling(window=50, min_periods=1).mean()
+    df["MA200"] = close.rolling(window=200, min_periods=1).mean()
 
     return df

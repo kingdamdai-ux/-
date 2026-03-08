@@ -127,6 +127,21 @@ def _render_symbol_chart(symbol: str, source: str) -> None:
 def _score_symbol(symbol: str, source: str, config: ScoreConfig, force_refresh: bool) -> dict:
     """単一シンボルについてデータ取得・指標計算・スコアリングを行います。"""
 
+    # 防御: None や空文字が来ると yfinance 側でエラーになるため先に扱う
+    if not symbol or not isinstance(symbol, str):
+        return {
+            "symbol": symbol,
+            "score": None,
+            "rsi_score": None,
+            "ma_score": None,
+            "rsi": None,
+            "ma50": None,
+            "ma200": None,
+            "attempts": 0,
+            "status": "error",
+            "error": "無効なシンボルです。",
+        }
+
     if source == "yfinance":
         df, attempts, error = _get_cached_data(symbol, force_refresh=force_refresh)
     else:
@@ -358,23 +373,22 @@ def main() -> None:
                         "RSI": lambda x: f"{x:.1f}" if x is not None else "-",
                         "MA50": lambda x: f"{x:.1f}" if x is not None else "-",
                         "MA200": lambda x: f"{x:.1f}" if x is not None else "-",
-                    "ベンチマーク超過": lambda x: f"{x:.1f}" if x is not None else "-",
+                        "ベンチマーク超過": lambda x: f"{x:.1f}" if x is not None else "-",
                     }
                 )
 
+                def _color_score(val: float | None) -> str:
+                    if val is None:
+                        return ""
+                    if val >= 0:
+                        return "color: #007f3e"  # 緑
+                    return "color: #c70000"  # 赤
+
                 if "合計スコア" in df.columns:
-                    styler = styler.background_gradient(subset=["合計スコア"], cmap="RdYlGn")
+                    styler = styler.applymap(_color_score, subset=["合計スコア"])
 
                 if "ベンチマーク超過" in df.columns:
-                    vals = df["ベンチマーク超過"].dropna()
-                    if not vals.empty:
-                        max_abs = max(abs(vals.min()), abs(vals.max()))
-                        styler = styler.background_gradient(
-                            subset=["ベンチマーク超過"],
-                            cmap="RdYlGn",
-                            vmin=-max_abs,
-                            vmax=max_abs,
-                        )
+                    styler = styler.applymap(_color_score, subset=["ベンチマーク超過"])
 
                 if "状態" in df.columns:
                     def _highlight_status(row: pd.Series) -> list[str]:
