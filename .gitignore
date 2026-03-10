@@ -1,0 +1,9 @@
+.venv/
+.venv313/
+.pip-tmp/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+streamlit*.log
+streamlit*.err.log
